@@ -2,13 +2,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Send, Volume2, User, Bot } from 'lucide-react';
-import OpenAI from 'openai';
 
-// ✅ Initialize OpenAI client only for speech-to-text and text-to-speech
-const openai = new OpenAI({
-  apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true, // ✅ Important to allow browser-side calls
-});
+// All OpenAI calls go through server routes under /api; no key ships to the browser.
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
@@ -74,14 +69,17 @@ export default function Home() {
     }
   };
 
-  // ✅ Transcribe audio using OpenAI Whisper
+  // ✅ Transcribe audio via the server route (OpenAI Whisper)
   const transcribeAudio = async (audioBlob: Blob) => {
     try {
       setIsLoading(true);
-      const transcription = await openai.audio.transcriptions.create({
-        file: new File([audioBlob], 'audio.webm', { type: 'audio/webm' }),
-        model: 'whisper-1',
-      });
+      const form = new FormData();
+      form.append('file', audioBlob, 'audio.webm');
+      const response = await fetch('/api/transcribe', { method: 'POST', body: form });
+      if (!response.ok) {
+        throw new Error('Failed to transcribe audio');
+      }
+      const transcription = await response.json();
 
       setInput(transcription.text);
     } catch (error) {
@@ -91,14 +89,17 @@ export default function Home() {
     }
   };
 
-  // ✅ Text-to-speech using OpenAI API
+  // ✅ Text-to-speech via the server route (OpenAI TTS)
   const speakText = async (text: string) => {
     try {
-      const response = await openai.audio.speech.create({
-        model: 'tts-1',
-        voice: 'alloy',
-        input: text,
+      const response = await fetch('/api/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
       });
+      if (!response.ok) {
+        throw new Error('Failed to generate speech');
+      }
 
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
